@@ -1,9 +1,32 @@
 import { bitable } from '@lark-base-open/js-sdk';
 import type { FieldMeta, RecordData, Selection, FieldType, AggregatedOrder, OrderHeader, OrderItem, FieldConflict } from '../types';
+import { findSerialFieldInList, matchesSerialFieldName } from '../utils/serialFieldMatcher';
 
 // 商品级字段名列表
 const ITEM_FIELDS = ['PRODUCTS', 'QTY', 'UNIT PRICE', 'Amount', 'Description(颜色/印刷等)'];
-const SERIAL_FIELD_KEYWORD = '所属询盘流水号';
+const KNOWN_FIELD_NAMES = [
+  '所属询盘流水号',
+  '流水号',
+  'PI号',
+  'PI日期',
+  'PO number',
+  'Bill to',
+  'Ship to',
+  'PRODUCTS',
+  'QTY',
+  'UNIT PRICE',
+  'Amount',
+  'Description(颜色/印刷等)',
+  'Subtotal',
+  'Total',
+  'Shipping Cost',
+  'In-hand Date',
+  'Firm',
+  'Shipping method',
+  'Setup QTY',
+  'Setup Charge',
+  'AMOUNT 2',
+];
 
 class BitableService {
   /**
@@ -57,6 +80,57 @@ class BitableService {
   }
 
   /**
+   * 从已经通过宿主授权的 ITable 实例读字段列表。
+   *
+   * 背景：在 dashboard View 模式下，`bitable.base.getTableById(id)` 返回的 table
+   * 是"未经宿主确认的代理"，调 `getFieldMetaList()` 会报 `table permission denied error`。
+   * 而 `bitable.base.getTableByName(name)` 返回的 table 实例是经宿主异步校验过的，
+   * 可以直接调 `getFieldMetaList()`。所以只要外层用 getTableByName 拿到 table，
+   * 就应当把这个实例传进来，避免再被 id 路径覆盖掉。
+   */
+  async getFieldListFromTable(table: any, debugLabel = 'unknown'): Promise<FieldMeta[]> {
+    try {
+      const fieldMetaList = await table.getFieldMetaList();
+      console.log('[bitableService] getFieldListFromTable getFieldMetaList 成功:', {
+        debugLabel,
+        fieldCount: fieldMetaList.length,
+      });
+
+      return fieldMetaList.map((field: any) => ({
+        id: field.id,
+        name: field.name,
+        type: field.type as unknown as FieldType,
+        selected: false,
+      }));
+    } catch (metaError) {
+      console.warn('[bitableService] getFieldListFromTable getFieldMetaList 失败，尝试 table.getFieldList:', metaError);
+      try {
+        const fieldList = await table.getFieldList();
+        const fallbackFields: FieldMeta[] = await Promise.all(fieldList.map(async (field: any) => ({
+          id: field.id,
+          name: await field.getName(),
+          type: await field.getType() as unknown as FieldType,
+          selected: false,
+        })));
+
+        console.log('[bitableService] getFieldListFromTable table.getFieldList 成功:', {
+          debugLabel,
+          fieldCount: fallbackFields.length,
+        });
+
+        return fallbackFields;
+      } catch (fieldListError) {
+        console.error('[bitableService] getFieldListFromTable 两种读取均失败:', {
+          debugLabel,
+          metaError,
+          fieldListError,
+        });
+        return [];
+      }
+    }
+  }
+
+  /**
    * 获取表格字段列表
    */
   async getFieldList(tableId: string): Promise<FieldMeta[]> {
@@ -78,25 +152,69 @@ class BitableService {
         }));
       } catch (metaError) {
         console.warn('[bitableService] getFieldMetaList 失败，回退 getFieldList:', metaError);
-        const fieldList = await table.getFieldList();
-        const fallbackFields = await Promise.all(fieldList.map(async (field) => ({
-          id: field.id,
-          name: await field.getName(),
-          type: await field.getType() as unknown as FieldType,
-          selected: false,
-        })));
+        try {
+          const fieldList = await table.getFieldList();
+          const fallbackFields = await Promise.all(fieldList.map(async (field) => ({
+            id: field.id,
+            name: await field.getName(),
+            type: await field.getType() as unknown as FieldType,
+            selected: false,
+          })));
 
-        console.log('[bitableService] getFieldList 使用 table.getFieldList 成功:', {
-          tableId,
-          fieldCount: fallbackFields.length,
-        });
+          console.log('[bitableService] getFieldList 使用 table.getFieldList 成功:', {
+            tableId,
+            fieldCount: fallbackFields.length,
+          });
 
-        return fallbackFields;
+          return fallbackFields;
+        } catch (fieldListError) {
+          console.warn('[bitableService] table.getFieldList 失败，回退已知字段探测:', fieldListError);
+          const knownFields = await this.getKnownFieldsByName(tableId);
+          if (knownFields.length > 0) {
+            return knownFields;
+          }
+          throw fieldListError;
+        }
       }
     } catch (error) {
       console.error('获取字段列表失败:', error);
       return [];
     }
+  }
+
+  private async getKnownFieldsByName(tableId: string): Promise<FieldMeta[]> {
+    const table = await bitable.base.getTableById(tableId);
+    const resolvedFields: FieldMeta[] = [];
+    const missedFieldNames: string[] = [];
+
+    for (const fieldName of KNOWN_FIELD_NAMES) {
+      try {
+        const field = await table.getField(fieldName);
+        const resolvedName = await field.getName();
+
+        if (resolvedFields.some(existingField => existingField.id === field.id)) {
+          continue;
+        }
+
+        resolvedFields.push({
+          id: field.id,
+          name: resolvedName,
+          type: await field.getType() as unknown as FieldType,
+          selected: false,
+        });
+      } catch {
+        missedFieldNames.push(fieldName);
+      }
+    }
+
+    console.log('[bitableService] 已知字段探测结果:', {
+      tableId,
+      fieldCount: resolvedFields.length,
+      fieldNames: resolvedFields.map(field => field.name),
+      missedFieldNames,
+    });
+
+    return resolvedFields;
   }
 
   /**
@@ -132,11 +250,14 @@ class BitableService {
         : await this.getFieldList(tableId);
 
       // 找到流水号字段
-      const serialField = availableFields.find(f =>
-        f.name === SERIAL_FIELD_KEYWORD || f.name.includes(SERIAL_FIELD_KEYWORD)
-      );
+      const serialField = findSerialFieldInList(availableFields);
       if (!serialField) {
-        console.error('[bitableService] 未找到流水号字段');
+        console.error('[bitableService] 未找到流水号字段:', {
+          tableId,
+          serialNo,
+          availableFieldCount: availableFields.length,
+          availableFieldNames: availableFields.map(field => field.name),
+        });
         return [];
       }
 
@@ -337,7 +458,7 @@ class BitableService {
    */
   private setHeaderField(header: OrderHeader, fieldName: string, value: string): void {
     const normalized = fieldName.toLowerCase().replace(/\s+/g, '');
-    if (normalized === '流水号' || normalized === '所属询盘流水号' || normalized === 'serialno') {
+    if (matchesSerialFieldName(fieldName)) {
       header.serialNo = value;
     } else if (normalized === 'ponumber' || normalized === 'po') {
       header.poNumber = value;

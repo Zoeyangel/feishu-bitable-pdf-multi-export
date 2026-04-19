@@ -143,7 +143,7 @@ import { templates, getTemplateById } from './templates';
 import { matchTemplateFields } from './utils/fieldMatcher';
 import { matchesPiNumberFieldName } from './utils/piFieldMatcher';
 import { isConfirmedDashboardMode } from './utils/runtimeMode';
-import { buildFixedDashboardDataCondition } from './utils/dashboardDataCondition';
+import { findSerialFieldInList } from './utils/serialFieldMatcher';
 import { getSearchTableLookupStrategy, shouldValidateTargetView } from './utils/searchTableStrategy';
 import { FieldType, type AggregatedOrder, type FieldMeta, type Selection, type InvoiceTableContext } from './types';
 
@@ -197,9 +197,6 @@ const normalizeLookupText = (value: string): string =>
 const cloneFields = (sourceFields: FieldMeta[]): FieldMeta[] =>
   sourceFields.map(field => ({ ...field, selected: false }));
 
-const matchesSerialField = (field: Pick<FieldMeta, 'name'>): boolean =>
-  field.name === SERIAL_FIELD_KEYWORD || field.name.includes(SERIAL_FIELD_KEYWORD);
-
 const matchesPiNumberField = (field: Pick<FieldMeta, 'name'>): boolean =>
   matchesPiNumberFieldName(field.name);
 
@@ -213,7 +210,7 @@ const matchesPiDateField = (field: Pick<FieldMeta, 'name'>): boolean => {
 };
 
 const findSerialField = (availableFields: FieldMeta[] = fields.value): FieldMeta | undefined =>
-  availableFields.find(matchesSerialField);
+  findSerialFieldInList(availableFields);
 
 // ============ PI号相关函数 ============
 
@@ -278,21 +275,6 @@ const setFieldsForCurrentTable = (tableFields: FieldMeta[]) => {
   applyTemplateFieldSelection();
 };
 
-const buildFixedDashboardConfig = async (customConfig: DashboardCustomConfig) => {
-  const targetTable = await bitable.base.getTableByName(TARGET_TABLE_NAME);
-  const dataRanges = await bitable.dashboard.getTableDataRange(targetTable.id);
-  const fixedDataCondition = buildFixedDashboardDataCondition(targetTable.id, dataRanges as Array<{
-    type: 'ALL' | 'VIEW';
-    viewId?: string;
-    viewName?: string;
-  }>);
-
-  return {
-    dataConditions: [fixedDataCondition],
-    customConfig,
-  };
-};
-
 const buildInvoiceTableContext = (
   tableId: string,
   tableName: string,
@@ -301,6 +283,13 @@ const buildInvoiceTableContext = (
 ): InvoiceTableContext => {
   const serialField = findSerialField(tableFields);
   if (!serialField) {
+    console.warn('[App] buildInvoiceTableContext 未找到流水号字段:', {
+      tableId,
+      tableName,
+      source,
+      fieldCount: tableFields.length,
+      fieldNames: tableFields.map(field => field.name),
+    });
     throw new Error(`数据表中未找到"${SERIAL_FIELD_KEYWORD}"字段`);
   }
 
@@ -393,27 +382,76 @@ const resolveSearchTableContext = async (): Promise<InvoiceTableContext> => {
   console.log('[App] resolveSearchTableContext lookupStrategy:', lookupStrategy);
 
   if (lookupStrategy === 'direct-table-name') {
-    const targetTable = await bitable.base.getTableByName(TARGET_TABLE_NAME);
-    console.log('[App] resolveSearchTableContext getTableByName 成功:', {
-      targetTableName: TARGET_TABLE_NAME,
-    });
-
-    const targetTableId = targetTable.id;
-    console.log('[App] resolveSearchTableContext direct table id:', {
-      targetTableId,
-      targetTableName: TARGET_TABLE_NAME,
-    });
-
-    const resolved = await inspectTableContext({
-      id: targetTableId,
-      name: TARGET_TABLE_NAME,
-    }, 'target-name');
-
-    if (resolved) {
-      return resolved;
+    // View 模式下 bitable.base.getTableMetaList / getTableByName 多数会被宿主锁为 config-only，
+    // 只有 bitable.base.getTableById(savedTableId) 这一条可用。
+    // 所以这里必须从 customConfig.tableId 拿 savedTableId。
+    let savedTableId: string | undefined;
+    try {
+      const savedConfig = await bitable.dashboard.getConfig();
+      const customConfig = (savedConfig?.customConfig ?? {}) as Record<string, unknown>;
+      if (typeof customConfig.tableId === 'string' && customConfig.tableId) {
+        savedTableId = customConfig.tableId;
+      }
+      console.log('[App] resolveSearchTableContext getConfig 结果:',
+        JSON.stringify({
+          hasCustomConfig: !!savedConfig?.customConfig,
+          customConfigKeys: Object.keys(customConfig),
+          customConfigRaw: customConfig,
+          savedTableId,
+        }, null, 2)
+      );
+    } catch (configError) {
+      console.warn('[App] resolveSearchTableContext getConfig 失败:', configError);
     }
 
-    throw new Error(`目标表“${TARGET_TABLE_NAME}”中未找到视图“${TARGET_VIEW_NAME}”`);
+    if (!savedTableId) {
+      throw new Error(
+        '配置缺少目标表 id。请在应用端"编辑配置"里点一次"确认"，让插件把"发票制作"表的 id 保存进 customConfig。'
+      );
+    }
+
+    // 权限对照诊断：在 View 模式下尝试读几张不同的表，判断 "table permission denied" 是"所有表都被拒"
+    // 还是"发票制作这张特定表被拒"（一般是 Feishu 对该表开了字段/记录权限才会这样）。
+    const permissionProbeTableIds = [
+      savedTableId,            // 目标表：发票制作
+      'tblbSvqMqsswAv1w',      // 对照 1：❗询盘-订单跟进（pdf_export 能读这张）
+      'tblD2VuqWgFSFdfs',      // 对照 2：新增询盘
+    ];
+    for (const probeId of permissionProbeTableIds) {
+      try {
+        const probeTable = await bitable.base.getTableById(probeId);
+        const probeMeta = await probeTable.getFieldMetaList();
+        console.log('[App] 权限探测成功:', {
+          probeTableId: probeId,
+          fieldCount: probeMeta.length,
+          sampleFieldNames: probeMeta.slice(0, 5).map(meta => meta.name),
+        });
+      } catch (probeError) {
+        console.warn('[App] 权限探测失败:', {
+          probeTableId: probeId,
+          error: probeError instanceof Error ? probeError.message : probeError,
+        });
+      }
+    }
+
+    const tableRef = await bitable.base.getTableById(savedTableId);
+    const targetTableId = savedTableId;
+    console.log('[App] resolveSearchTableContext 使用 savedTableId:', { targetTableId });
+
+    const rawFields = await bitableService.getFieldListFromTable(tableRef, `direct-table:${TARGET_TABLE_NAME}`);
+    const tableFields = cloneFields(rawFields);
+
+    console.log('[App] resolveSearchTableContext direct table fields 构建完成:', {
+      targetTableId,
+      fieldCount: tableFields.length,
+      fieldNames: tableFields.slice(0, 30).map(field => field.name),
+      hasSerialField: !!findSerialField(tableFields),
+      hasPiField: !!findPiNumberField(tableFields),
+      serialFieldName: findSerialField(tableFields)?.name,
+      piFieldName: findPiNumberField(tableFields)?.name,
+    });
+
+    return buildInvoiceTableContext(targetTableId, TARGET_TABLE_NAME, tableFields, 'target-name');
   }
 
   const tableMetaList = await bitable.base.getTableMetaList();
@@ -751,6 +789,7 @@ const handleSelectionTrigger = async (triggerSelection: Selection) => {
 
 // 应用模式：通过流水号搜索记录
 const searchBySerialNumber = async () => {
+  error.value = null;
   searchError.value = null;
   const serialNum = searchSerialNumber.value.trim();
   if (!serialNum) {
@@ -866,6 +905,13 @@ const applyTemplateFieldSelection = () => {
 };
 
 // 应用模式：配置确认
+// 与 pdf_export 对齐：
+// - dataConditions 留空（避免把 widget 权限降级到 VIEW 收窄模式）；
+// - customConfig 里保存目标表 id，供 View 模式搜索时按 id 反查表。
+// 实现要点：Config/Create 模式下 `bitable.base.getTableByName` 在部分状态抛
+// "table not found"，而 `bitable.base.getTableMetaList` 这一条 config-only 的 API
+// 在 Config 模式是稳定可用的（View 模式才会报 "this api is only supported in config mode"），
+// 所以统一走 getTableMetaList 按名字挑表。
 const onConfirm = async () => {
   console.log('[App] onConfirm 开始执行...');
   try {
@@ -874,7 +920,39 @@ const onConfirm = async () => {
       defaultTemplate: configData.value.defaultTemplate,
     };
 
-    const configToSave = await buildFixedDashboardConfig(nextCustomConfig);
+    let resolvedTargetTableId: string | undefined;
+    try {
+      const tableMetaList = await bitable.base.getTableMetaList();
+      console.log('[App] onConfirm getTableMetaList:',
+        JSON.stringify({
+          count: tableMetaList?.length ?? 0,
+          tables: (tableMetaList ?? []).map(meta => ({ id: meta.id, name: meta.name })),
+        }, null, 2)
+      );
+      const targetMeta = (tableMetaList ?? []).find(meta =>
+        normalizeLookupText(meta.name) === normalizeLookupText(TARGET_TABLE_NAME)
+      );
+      if (targetMeta) {
+        resolvedTargetTableId = targetMeta.id;
+        console.log('[App] onConfirm 命中目标表:', {
+          targetTableName: TARGET_TABLE_NAME,
+          targetTableId: resolvedTargetTableId,
+        });
+      } else {
+        console.warn('[App] onConfirm 未在可见表清单中找到目标表:', { TARGET_TABLE_NAME });
+      }
+    } catch (tableLookupError) {
+      console.warn('[App] onConfirm getTableMetaList 失败，customConfig 不写 tableId:', tableLookupError);
+    }
+
+    const configToSave = {
+      dataConditions: [],
+      customConfig: {
+        pluginName: nextCustomConfig.pluginName,
+        defaultTemplate: nextCustomConfig.defaultTemplate,
+        ...(resolvedTargetTableId ? { tableId: resolvedTargetTableId } : {}),
+      },
+    };
     console.log('[App] 保存配置:', JSON.stringify(configToSave, null, 2));
 
     const saveResult = await bitable.dashboard.saveConfig(configToSave as any);
@@ -1008,22 +1086,35 @@ const init = async () => {
         return;
       }
 
-      // View / FullScreen：只有 setRendered 真正成功后，才确认是 dashboard。
-      await bitable.dashboard.setRendered();
+      // View / FullScreen：只有 setRendered 真正"受宿主确认"后，才确认是 dashboard。
+      // 在底表环境中 bitable.dashboard.state 也可能返回 'View'，且 setRendered() 有可能
+      // 立即 resolve（不像 getConfig() 那样永久挂起）。若此处直接 await setRendered 成功就
+      // 切换到应用模式，会卸掉 onSelectionChange，导致底表点击行没有响应。
+      // 用 1000ms 竞速：在规定时间内 resolve 视为真实应用模式；超时则回退底表模式。
+      const setRenderedResult = await Promise.race([
+        bitable.dashboard.setRendered().then(() => 'rendered' as const).catch(err => {
+          console.warn('[App] setRendered 调用抛错，视为底表模式:', err);
+          return 'error' as const;
+        }),
+        new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), 1000)),
+      ]);
+      console.log('[App] setRendered 竞速结果:', setRenderedResult);
+
+      if (setRenderedResult !== 'rendered') {
+        throw new Error('setRendered 未在预期时间内完成，按底表模式处理');
+      }
+
       dashboardApiWorks = true;
       isConfigMode.value = false;
       confirmDashboardMode();
 
-      try {
-        const fixedDashboardConfig = await buildFixedDashboardConfig({
-          pluginName: dashboardCustomConfig.value.pluginName || configData.value.pluginName,
-          defaultTemplate: dashboardCustomConfig.value.defaultTemplate || configData.value.defaultTemplate,
-        });
-        console.log('[App] 自动补齐固定 dataConditions:', fixedDashboardConfig);
-        await bitable.dashboard.saveConfig(fixedDashboardConfig as any);
-      } catch (e) {
-        console.warn('[App] 自动补齐 fixed dataConditions 失败:', e);
-      }
+      // NOTE: View 模式下不再调用 saveConfig。
+      // 之前的"自动补齐固定 dataConditions"会在每次打开时把
+      // dataRange=VIEW 的受限 dataCondition 写回宿主，
+      // 结果 Dashboard 会把当前插件固定为"受限数据视图"权限，
+      // 后续 bitable.base.getTableById(x).getFieldMetaList() 全部报
+      // "table permission denied error"，搜索流水号时就看不到任何字段。
+      // 配置落盘交由 Config 模式的 onConfirm 负责。
       return;
 
     } catch (e) {
@@ -1056,6 +1147,7 @@ const init = async () => {
 const handleSelectionChange = async (newSelection: Selection | null) => {
   if (!newSelection?.recordId) {
     selection.value = null;
+    error.value = null;
     fields.value = [];
     aggregatedOrder.value = null;
     invoiceTableContext.value = null;
@@ -1064,6 +1156,7 @@ const handleSelectionChange = async (newSelection: Selection | null) => {
   }
 
   selection.value = newSelection;
+  error.value = null;
   loading.value = true;
 
   try {
