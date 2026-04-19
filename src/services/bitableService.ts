@@ -34,17 +34,13 @@ class BitableService {
    */
   async getSelection(): Promise<Selection | null> {
     try {
-      console.log('[bitableService] 正在获取选中信息...');
       const selection = await bitable.base.getSelection();
-      console.log('[bitableService] 选中信息:', selection);
 
       if (!selection) {
-        console.log('[bitableService] selection 为空');
         return null;
       }
 
       if (!selection.recordId) {
-        console.log('[bitableService] recordId 为空，当前可能未选中记录');
         return null;
       }
 
@@ -63,9 +59,7 @@ class BitableService {
    * 监听选中变化
    */
   onSelectionChange(callback: (selection: Selection | null) => void): () => void {
-    console.log('[bitableService] 注册选中变化监听...');
     return bitable.base.onSelectionChange((e) => {
-      console.log('[bitableService] 选中变化:', e.data);
       const selection = e.data;
       if (selection && selection.recordId) {
         callback({
@@ -91,10 +85,6 @@ class BitableService {
   async getFieldListFromTable(table: any, debugLabel = 'unknown'): Promise<FieldMeta[]> {
     try {
       const fieldMetaList = await table.getFieldMetaList();
-      console.log('[bitableService] getFieldListFromTable getFieldMetaList 成功:', {
-        debugLabel,
-        fieldCount: fieldMetaList.length,
-      });
 
       return fieldMetaList.map((field: any) => ({
         id: field.id,
@@ -112,11 +102,6 @@ class BitableService {
           type: await field.getType() as unknown as FieldType,
           selected: false,
         })));
-
-        console.log('[bitableService] getFieldListFromTable table.getFieldList 成功:', {
-          debugLabel,
-          fieldCount: fallbackFields.length,
-        });
 
         return fallbackFields;
       } catch (fieldListError) {
@@ -139,10 +124,6 @@ class BitableService {
 
       try {
         const fieldMetaList = await table.getFieldMetaList();
-        console.log('[bitableService] getFieldList 使用 getFieldMetaList 成功:', {
-          tableId,
-          fieldCount: fieldMetaList.length,
-        });
 
         return fieldMetaList.map(field => ({
           id: field.id,
@@ -160,11 +141,6 @@ class BitableService {
             type: await field.getType() as unknown as FieldType,
             selected: false,
           })));
-
-          console.log('[bitableService] getFieldList 使用 table.getFieldList 成功:', {
-            tableId,
-            fieldCount: fallbackFields.length,
-          });
 
           return fallbackFields;
         } catch (fieldListError) {
@@ -185,7 +161,6 @@ class BitableService {
   private async getKnownFieldsByName(tableId: string): Promise<FieldMeta[]> {
     const table = await bitable.base.getTableById(tableId);
     const resolvedFields: FieldMeta[] = [];
-    const missedFieldNames: string[] = [];
 
     for (const fieldName of KNOWN_FIELD_NAMES) {
       try {
@@ -203,16 +178,9 @@ class BitableService {
           selected: false,
         });
       } catch {
-        missedFieldNames.push(fieldName);
+        // ignore missing known fields
       }
     }
-
-    console.log('[bitableService] 已知字段探测结果:', {
-      tableId,
-      fieldCount: resolvedFields.length,
-      fieldNames: resolvedFields.map(field => field.name),
-      missedFieldNames,
-    });
 
     return resolvedFields;
   }
@@ -224,7 +192,6 @@ class BitableService {
     try {
       const table = await bitable.base.getTableById(tableId);
       const value = await table.getCellString(fieldId, recordId);
-      console.log(`[bitableService] getCellValue: tableId=${tableId}, fieldId=${fieldId}, recordId=${recordId}, value="${value}"`);
       return value || '';
     } catch (error) {
       console.error('[bitableService] 获取单元格值失败:', error);
@@ -243,7 +210,6 @@ class BitableService {
     knownFields?: FieldMeta[]
   ): Promise<RecordData[]> {
     try {
-      console.log('[bitableService] getRecordsBySerialNo 开始, tableId:', tableId, 'serialNo:', serialNo);
       const table = await bitable.base.getTableById(tableId);
       const availableFields = knownFields && knownFields.length > 0
         ? knownFields
@@ -261,20 +227,9 @@ class BitableService {
         return [];
       }
 
-      console.log('[bitableService] 流水号字段解析结果:', {
-        tableId,
-        serialNo,
-        serialFieldId: serialField.id,
-        serialFieldName: serialField.name,
-        fieldCount: availableFields.length,
-      });
-
       // 分页查询所有记录，筛选匹配流水号的
       const matchingRecords: RecordData[] = [];
       let pageToken: string | undefined;
-      let scannedRecordCount = 0;
-      let pageIndex = 0;
-      const sampleSerialValues: Array<{ recordId: string; serialStr: string }> = [];
 
       do {
         const response = await table.getRecordsByPage({
@@ -282,21 +237,12 @@ class BitableService {
           pageToken: pageToken ? Number(pageToken) : undefined,
           stringValue: true,
         });
-        pageIndex += 1;
 
         for (const rec of response.records) {
-          scannedRecordCount += 1;
           const serialVal = rec.fields[serialField.id];
           const serialStr = Array.isArray(serialVal)
             ? (serialVal as any[]).map(v => String(v ?? '')).join('\n')
             : String(serialVal ?? '');
-
-          if (sampleSerialValues.length < 10) {
-            sampleSerialValues.push({
-              recordId: rec.recordId,
-              serialStr: serialStr.trim(),
-            });
-          }
 
           // 精确匹配流水号
           if (serialStr.trim() === serialNo.trim()) {
@@ -317,27 +263,8 @@ class BitableService {
           }
         }
 
-        console.log('[bitableService] 分页扫描进度:', {
-          tableId,
-          serialNo,
-          pageIndex,
-          pageSize: response.records.length,
-          scannedRecordCount,
-          matchedCount: matchingRecords.length,
-          hasMore: response.hasMore,
-          nextPageToken: response.pageToken,
-        });
-
         pageToken = response.hasMore ? (response.pageToken as string | undefined) : undefined;
       } while (pageToken);
-
-      console.log('[bitableService] getRecordsBySerialNo 完成:', {
-        tableId,
-        serialNo,
-        scannedRecordCount,
-        matchedCount: matchingRecords.length,
-        sampleSerialValues,
-      });
 
       return matchingRecords;
     } catch (error) {
@@ -479,8 +406,6 @@ class BitableService {
       const table = await bitable.base.getTableById(tableId);
       const values: string[] = [];
       let pageToken: string | undefined;
-      let pageIndex = 0;
-      let scannedRecordCount = 0;
 
       do {
         const response = await table.getRecordsByPage({
@@ -488,10 +413,8 @@ class BitableService {
           pageToken: pageToken ? Number(pageToken) : undefined,
           stringValue: true,
         });
-        pageIndex += 1;
 
         for (const rec of response.records) {
-          scannedRecordCount += 1;
           const cellVal = rec.fields[fieldId];
           const cellStr = Array.isArray(cellVal)
             ? (cellVal as any[]).map(v => String(v ?? '')).join('')
@@ -501,27 +424,8 @@ class BitableService {
           }
         }
 
-        console.log('[bitableService] getAllFieldValues 分页扫描:', {
-          tableId,
-          fieldId,
-          pageIndex,
-          pageSize: response.records.length,
-          scannedRecordCount,
-          collectedValueCount: values.length,
-          hasMore: response.hasMore,
-          nextPageToken: response.pageToken,
-        });
-
         pageToken = response.hasMore ? (response.pageToken as string | undefined) : undefined;
       } while (pageToken);
-
-      console.log('[bitableService] getAllFieldValues 完成:', {
-        tableId,
-        fieldId,
-        scannedRecordCount,
-        collectedValueCount: values.length,
-        sampleValues: values.slice(0, 20),
-      });
 
       return values;
     } catch (error) {
@@ -536,13 +440,7 @@ class BitableService {
   async setCellValue(tableId: string, fieldId: string, recordId: string, value: string | number | boolean | null): Promise<void> {
     try {
       const table = await bitable.base.getTableById(tableId);
-      console.log('[bitableService] setCellValue 入参:', { tableId, fieldId, recordId, value });
-
       const success = await table.setCellValue(fieldId, recordId, value as any);
-      console.log('[bitableService] setCellValue 返回:', { fieldId, recordId, success });
-
-      const verifiedValue = await table.getCellString(fieldId, recordId);
-      console.log('[bitableService] setCellValue 读后校验:', { fieldId, recordId, verifiedValue });
 
       if (success === false) {
         throw new Error(`setCellValue 返回 false: fieldId=${fieldId}, recordId=${recordId}`);

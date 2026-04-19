@@ -308,64 +308,21 @@ const inspectTableContext = async (
   tableMeta: { id: string; name: string },
   source: InvoiceTableContext['source']
 ): Promise<InvoiceTableContext | null> => {
-  console.log('[App] inspectTableContext 开始:', {
-    tableId: tableMeta.id,
-    tableName: tableMeta.name,
-    source,
-  });
-
   const table = await bitable.base.getTableById(tableMeta.id);
-  console.log('[App] inspectTableContext getTableById 成功:', {
-    tableId: tableMeta.id,
-    tableName: tableMeta.name,
-  });
 
   if (shouldValidateTargetView(isDashboard.value)) {
     const viewMetaList = await table.getViewMetaList();
-    console.log('[App] inspectTableContext getViewMetaList 成功:', {
-      tableId: tableMeta.id,
-      tableName: tableMeta.name,
-      viewCount: viewMetaList.length,
-    });
-
     const targetView = viewMetaList.find(view =>
       normalizeLookupText(view.name) === normalizeLookupText(TARGET_VIEW_NAME)
     );
 
-    console.log('[App] 检查目标表候选:', {
-      tableId: tableMeta.id,
-      tableName: tableMeta.name,
-      source,
-      viewCount: viewMetaList.length,
-      targetViewId: targetView?.id,
-      targetViewName: targetView?.name,
-    });
-
     if (!targetView) {
       return null;
     }
-  } else {
-    console.log('[App] inspectTableContext 跳过视图校验:', {
-      tableId: tableMeta.id,
-      tableName: tableMeta.name,
-      reason: 'dashboard-mode',
-    });
   }
 
   const tableFields = await loadTableFields(tableMeta.id);
-  console.log('[App] inspectTableContext loadTableFields 成功:', {
-    tableId: tableMeta.id,
-    tableName: tableMeta.name,
-    fieldCount: tableFields.length,
-  });
-
   const serialField = findSerialField(tableFields);
-
-  console.log('[App] 检查目标表字段结果:', {
-    tableId: tableMeta.id,
-    tableName: tableMeta.name,
-    hasSerialField: !!serialField,
-  });
 
   if (!serialField) {
     throw new Error(`目标表“${TARGET_TABLE_NAME}”中未找到“${SERIAL_FIELD_KEYWORD}”字段`);
@@ -376,10 +333,7 @@ const inspectTableContext = async (
 
 // 始终按固定表“发票制作”与固定视图“信息录入”定位查询目标。
 const resolveSearchTableContext = async (): Promise<InvoiceTableContext> => {
-  console.log('[App] resolveSearchTableContext 开始');
-
   const lookupStrategy = getSearchTableLookupStrategy(isDashboard.value);
-  console.log('[App] resolveSearchTableContext lookupStrategy:', lookupStrategy);
 
   if (lookupStrategy === 'direct-table-name') {
     // View 模式下 bitable.base.getTableMetaList / getTableByName 多数会被宿主锁为 config-only，
@@ -392,14 +346,6 @@ const resolveSearchTableContext = async (): Promise<InvoiceTableContext> => {
       if (typeof customConfig.tableId === 'string' && customConfig.tableId) {
         savedTableId = customConfig.tableId;
       }
-      console.log('[App] resolveSearchTableContext getConfig 结果:',
-        JSON.stringify({
-          hasCustomConfig: !!savedConfig?.customConfig,
-          customConfigKeys: Object.keys(customConfig),
-          customConfigRaw: customConfig,
-          savedTableId,
-        }, null, 2)
-      );
     } catch (configError) {
       console.warn('[App] resolveSearchTableContext getConfig 失败:', configError);
     }
@@ -410,65 +356,21 @@ const resolveSearchTableContext = async (): Promise<InvoiceTableContext> => {
       );
     }
 
-    // 权限对照诊断：在 View 模式下尝试读几张不同的表，判断 "table permission denied" 是"所有表都被拒"
-    // 还是"发票制作这张特定表被拒"（一般是 Feishu 对该表开了字段/记录权限才会这样）。
-    const permissionProbeTableIds = [
-      savedTableId,            // 目标表：发票制作
-      'tblbSvqMqsswAv1w',      // 对照 1：❗询盘-订单跟进（pdf_export 能读这张）
-      'tblD2VuqWgFSFdfs',      // 对照 2：新增询盘
-    ];
-    for (const probeId of permissionProbeTableIds) {
-      try {
-        const probeTable = await bitable.base.getTableById(probeId);
-        const probeMeta = await probeTable.getFieldMetaList();
-        console.log('[App] 权限探测成功:', {
-          probeTableId: probeId,
-          fieldCount: probeMeta.length,
-          sampleFieldNames: probeMeta.slice(0, 5).map(meta => meta.name),
-        });
-      } catch (probeError) {
-        console.warn('[App] 权限探测失败:', {
-          probeTableId: probeId,
-          error: probeError instanceof Error ? probeError.message : probeError,
-        });
-      }
-    }
-
     const tableRef = await bitable.base.getTableById(savedTableId);
-    const targetTableId = savedTableId;
-    console.log('[App] resolveSearchTableContext 使用 savedTableId:', { targetTableId });
+    const tableFields = cloneFields(
+      await bitableService.getFieldListFromTable(tableRef, `direct-table:${TARGET_TABLE_NAME}`)
+    );
 
-    const rawFields = await bitableService.getFieldListFromTable(tableRef, `direct-table:${TARGET_TABLE_NAME}`);
-    const tableFields = cloneFields(rawFields);
-
-    console.log('[App] resolveSearchTableContext direct table fields 构建完成:', {
-      targetTableId,
-      fieldCount: tableFields.length,
-      fieldNames: tableFields.slice(0, 30).map(field => field.name),
-      hasSerialField: !!findSerialField(tableFields),
-      hasPiField: !!findPiNumberField(tableFields),
-      serialFieldName: findSerialField(tableFields)?.name,
-      piFieldName: findPiNumberField(tableFields)?.name,
-    });
-
-    return buildInvoiceTableContext(targetTableId, TARGET_TABLE_NAME, tableFields, 'target-name');
+    return buildInvoiceTableContext(savedTableId, TARGET_TABLE_NAME, tableFields, 'target-name');
   }
 
   const tableMetaList = await bitable.base.getTableMetaList();
-  console.log('[App] resolveSearchTableContext getTableMetaList 成功:', {
-    tableCount: tableMetaList?.length ?? 0,
-    tableNames: (tableMetaList ?? []).map(tableMeta => tableMeta.name),
-  });
 
   if (!tableMetaList || tableMetaList.length === 0) {
     throw new Error('未找到任何数据表，请检查插件所在多维表格');
   }
 
   const targetTable = tableMetaList.find(tableMeta => isTargetTableName(tableMeta.name));
-  console.log('[App] resolveSearchTableContext 目标表匹配结果:', {
-    targetTableId: targetTable?.id,
-    targetTableName: targetTable?.name,
-  });
 
   if (!targetTable) {
     throw new Error(`未找到目标表“${TARGET_TABLE_NAME}”`);
@@ -487,14 +389,10 @@ const getPiDateWriteValue = (dateField: FieldMeta): string | number => {
   const dateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   if (dateField.type === FieldType.DateTime) {
-    const timestamp = dateOnly.getTime();
-    console.log('[App] PI日期字段为 DateTime，写入时间戳:', timestamp);
-    return timestamp;
+    return dateOnly.getTime();
   }
 
-  const dateStr = `${dateOnly.getFullYear()}-${String(dateOnly.getMonth() + 1).padStart(2, '0')}-${String(dateOnly.getDate()).padStart(2, '0')}`;
-  console.log('[App] PI日期字段为非 DateTime，写入字符串:', dateStr);
-  return dateStr;
+  return `${dateOnly.getFullYear()}-${String(dateOnly.getMonth() + 1).padStart(2, '0')}-${String(dateOnly.getDate()).padStart(2, '0')}`;
 };
 
 const extractInvoiceNumber = (value: string): number | null => {
@@ -507,12 +405,6 @@ const generateNextInvoiceNumber = async (
   context: InvoiceTableContext
 ): Promise<string> => {
   const piField = context.piNumberField;
-  console.log('[App] generateNextInvoiceNumber 开始:', {
-    tableId: context.tableId,
-    tableName: context.tableName,
-    piFieldId: piField?.id,
-    piFieldName: piField?.name,
-  });
 
   if (!piField) {
     console.warn('[App] 未识别到 PI号字段，回退为 AG-001');
@@ -520,31 +412,14 @@ const generateNextInvoiceNumber = async (
   }
 
   const allValues = await bitableService.getAllFieldValues(context.tableId, piField.id);
-  console.log('[App] generateNextInvoiceNumber 历史PI号扫描结果:', {
-    tableId: context.tableId,
-    tableName: context.tableName,
-    piFieldId: piField.id,
-    piFieldName: piField.name,
-    totalValueCount: allValues.length,
-    sampleValues: allValues.slice(0, 20),
-  });
 
   let maxNumber = 0;
   for (const value of allValues) {
     const num = extractInvoiceNumber(value);
-    console.log('[App] 解析历史PI号:', {
-      rawValue: value,
-      parsedNumber: num,
-    });
     if (num !== null && num > maxNumber) maxNumber = num;
   }
 
-  const nextValue = `AG-${String(maxNumber + 1).padStart(3, '0')}`;
-  console.log('[App] generateNextInvoiceNumber 结果:', {
-    maxNumber,
-    nextValue,
-  });
-  return nextValue;
+  return `AG-${String(maxNumber + 1).padStart(3, '0')}`;
 };
 
 const getOrGenerateInvoiceNumber = async (
@@ -553,13 +428,6 @@ const getOrGenerateInvoiceNumber = async (
   if (!aggregatedOrder.value) return 'AG-001';
 
   const piField = context.piNumberField;
-  console.log('[App] getOrGenerateInvoiceNumber 开始:', {
-    tableId: context.tableId,
-    tableName: context.tableName,
-    sourceRecordIds: aggregatedOrder.value.sourceRecordIds,
-    piFieldId: piField?.id,
-    piFieldName: piField?.name,
-  });
 
   if (!piField) {
     const nextValue = await generateNextInvoiceNumber(context);
@@ -573,16 +441,8 @@ const getOrGenerateInvoiceNumber = async (
       piField.id,
       recordId,
     );
-    console.log('[App] 检查当前订单已有PI号:', {
-      recordId,
-      currentValue,
-    });
     if (currentValue.trim()) {
       currentInvoiceNumber.value = currentValue.trim();
-      console.log('[App] 复用已有PI号:', {
-        recordId,
-        invoiceNumber: currentValue.trim(),
-      });
       return currentValue.trim();
     }
   }
@@ -596,10 +456,6 @@ const writeBackInvoiceNumber = async (
   context: InvoiceTableContext,
   invoiceNumber: string
 ): Promise<void> => {
-  console.log('[App] writeBackInvoiceNumber 开始, invoiceNumber:', invoiceNumber);
-  console.log('[App] selection.value:', selection.value);
-  console.log('[App] aggregatedOrder.value:', aggregatedOrder.value);
-
   if (!aggregatedOrder.value) {
     console.warn('[App] aggregatedOrder 为空，跳过写回');
     return;
@@ -615,31 +471,23 @@ const writeBackInvoiceNumber = async (
   }
 
   for (const recordId of sourceRecordIds) {
-    console.log('[App] 处理记录:', recordId);
-
-    console.log('[App] PI号字段:', piField);
     if (piField) {
       const currentValue = await bitableService.getCellValue(
         context.tableId,
         piField.id,
         recordId
       );
-      console.log('[App] 当前PI号值:', currentValue);
 
       if (!currentValue || !currentValue.trim()) {
-        console.log('[App] 写入PI号:', invoiceNumber);
         await bitableService.setCellValue(
           context.tableId,
           piField.id,
           recordId,
           invoiceNumber
         );
-      } else {
-        console.log('[App] PI号已有值，跳过写入');
       }
     }
 
-    console.log('[App] PI日期字段:', dateField);
     if (dateField) {
       const dateValue = getPiDateWriteValue(dateField);
       const currentDate = await bitableService.getCellValue(
@@ -647,18 +495,14 @@ const writeBackInvoiceNumber = async (
         dateField.id,
         recordId
       );
-      console.log('[App] 当前PI日期值:', currentDate);
 
       if (!currentDate || !currentDate.trim()) {
-        console.log('[App] 写入PI日期:', dateValue);
         await bitableService.setCellValue(
           context.tableId,
           dateField.id,
           recordId,
           dateValue
         );
-      } else {
-        console.log('[App] PI日期已有值，跳过写入');
       }
     }
   }
@@ -682,15 +526,6 @@ const loadOrderBySerialNo = async (
   serialNo: string
 ) => {
   const fieldIds = context.fields.map(field => field.id);
-  console.log('[App] loadOrderBySerialNo 开始:', {
-    tableId: context.tableId,
-    tableName: context.tableName,
-    source: context.source,
-    serialFieldId: context.serialField.id,
-    serialFieldName: context.serialField.name,
-    serialNo,
-    fieldCount: context.fields.length,
-  });
 
   const records = await bitableService.getRecordsBySerialNo(
     context.tableId,
@@ -698,13 +533,6 @@ const loadOrderBySerialNo = async (
     fieldIds,
     context.fields,
   );
-
-  console.log('[App] loadOrderBySerialNo 查询结果:', {
-    tableId: context.tableId,
-    serialNo,
-    recordCount: records.length,
-    recordIds: records.map(record => record.recordId),
-  });
 
   if (records.length === 0) {
     throw new Error(`未找到流水号为 "${serialNo}" 的记录`);
@@ -733,21 +561,8 @@ const loadOrderBySerialNo = async (
 const getSerialNumberFromSelectionTrigger = async (
   triggerSelection: Selection
 ): Promise<string> => {
-  console.log('[App] 底表点击触发开始:', {
-    triggerTableId: triggerSelection.tableId,
-    triggerViewId: triggerSelection.viewId,
-    triggerRecordId: triggerSelection.recordId,
-  });
-
   const triggerTableFields = await bitableService.getFieldList(triggerSelection.tableId);
   const triggerSerialField = findSerialField(triggerTableFields);
-
-  console.log('[App] 底表字段检查结果:', {
-    triggerTableId: triggerSelection.tableId,
-    fieldCount: triggerTableFields.length,
-    triggerSerialFieldId: triggerSerialField?.id,
-    triggerSerialFieldName: triggerSerialField?.name,
-  });
 
   if (!triggerSerialField) {
     throw new Error(`当前底表未找到"${SERIAL_FIELD_KEYWORD}"字段`);
@@ -758,15 +573,6 @@ const getSerialNumberFromSelectionTrigger = async (
     triggerSerialField.id,
     triggerSelection.recordId!,
   );
-
-  console.log('[App] 底表点击提取流水号结果:', {
-    triggerTableId: triggerSelection.tableId,
-    triggerRecordId: triggerSelection.recordId,
-    triggerSerialFieldId: triggerSerialField.id,
-    triggerSerialFieldName: triggerSerialField.name,
-    rawSerialNo: serialNo,
-    trimmedSerialNo: serialNo.trim(),
-  });
 
   if (!serialNo.trim()) {
     throw new Error(`选中记录的"${SERIAL_FIELD_KEYWORD}"为空`);
@@ -797,30 +603,15 @@ const searchBySerialNumber = async () => {
     return;
   }
 
-  console.log('[App] 搜索流水号:', serialNum);
   loading.value = true;
 
   try {
-    console.log('[App] searchBySerialNumber: 开始 resolveSearchTableContext');
     const resolved = await resolveSearchTableContext();
-    console.log('[App] searchBySerialNumber: resolveSearchTableContext 完成');
-    const serialField = findSerialField(resolved.fields);
-
-    console.log('[App] 搜索表定位结果:', {
-      tableName: resolved.tableName,
-      tableId: resolved.tableId,
-      source: resolved.source,
-      hasSerialField: !!serialField,
-    });
-
     setFieldsForCurrentTable(resolved.fields);
     invoiceTableContext.value = resolved;
     currentInvoiceNumber.value = '';
 
-    console.log('[App] searchBySerialNumber: 开始 loadOrderBySerialNo');
     await loadOrderBySerialNo(resolved, serialNum);
-    console.log('[App] searchBySerialNumber: loadOrderBySerialNo 完成');
-
   } catch (e) {
     console.error('[App] 搜索失败:', e);
     searchError.value = '搜索失败: ' + (e as Error).message;
@@ -867,9 +658,7 @@ const onDownload = async () => {
     await pdfService.download(template, aggregatedOrder.value, filename, editedValues.value, invoiceNumber);
 
     if (template.id === 'invoice' && invoiceNumber) {
-      console.log('[App] 开始写回 PI号和PI日期:', invoiceNumber);
       await writeBackInvoiceNumber(invoiceTableContext.value!, invoiceNumber);
-      console.log('[App] 写回完成');
     }
   } catch (e) {
     console.error('[App] PDF下载失败:', e);
@@ -913,7 +702,6 @@ const applyTemplateFieldSelection = () => {
 // 在 Config 模式是稳定可用的（View 模式才会报 "this api is only supported in config mode"），
 // 所以统一走 getTableMetaList 按名字挑表。
 const onConfirm = async () => {
-  console.log('[App] onConfirm 开始执行...');
   try {
     const nextCustomConfig: DashboardCustomConfig = {
       pluginName: configData.value.pluginName,
@@ -923,21 +711,11 @@ const onConfirm = async () => {
     let resolvedTargetTableId: string | undefined;
     try {
       const tableMetaList = await bitable.base.getTableMetaList();
-      console.log('[App] onConfirm getTableMetaList:',
-        JSON.stringify({
-          count: tableMetaList?.length ?? 0,
-          tables: (tableMetaList ?? []).map(meta => ({ id: meta.id, name: meta.name })),
-        }, null, 2)
-      );
       const targetMeta = (tableMetaList ?? []).find(meta =>
         normalizeLookupText(meta.name) === normalizeLookupText(TARGET_TABLE_NAME)
       );
       if (targetMeta) {
         resolvedTargetTableId = targetMeta.id;
-        console.log('[App] onConfirm 命中目标表:', {
-          targetTableName: TARGET_TABLE_NAME,
-          targetTableId: resolvedTargetTableId,
-        });
       } else {
         console.warn('[App] onConfirm 未在可见表清单中找到目标表:', { TARGET_TABLE_NAME });
       }
@@ -953,10 +731,8 @@ const onConfirm = async () => {
         ...(resolvedTargetTableId ? { tableId: resolvedTargetTableId } : {}),
       },
     };
-    console.log('[App] 保存配置:', JSON.stringify(configToSave, null, 2));
 
-    const saveResult = await bitable.dashboard.saveConfig(configToSave as any);
-    console.log('[App] saveConfig 结果:', saveResult);
+    await bitable.dashboard.saveConfig(configToSave as any);
     applyDashboardCustomConfig(nextCustomConfig);
   } catch (e) {
     console.error('[App] 保存配置失败:', e);
@@ -990,8 +766,6 @@ const init = async () => {
   let modeResolved = false;
 
   unsubscribe = bitableService.onSelectionChange(async (newSelection) => {
-    console.log('[App] onSelectionChange 回调:', newSelection);
-
     if (modeResolved && isDashboard.value) {
       // 应用模式下不处理行选中事件
       return;
@@ -1015,22 +789,16 @@ const init = async () => {
       return undefined;
     }
   })();
-  console.log('[App] dashboard state 初始探测:', dashboardState);
-
   const currentSelection = pendingSelection ?? await bitableService.getSelection();
-  console.log('[App] 当前选中探测:', currentSelection);
 
   if (currentSelection?.recordId) {
     isDashboard.value = false;
     isConfigMode.value = false;
     modeResolved = true;
-    console.log('[App] 运行模式确认: 底表模式（检测到 record 级选中）');
 
     await handleSelectionChange(currentSelection);
     return;
   }
-
-  console.log('[App] 运行模式: 等待宿主确认');
 
   if (dashboardState) {
     // ===== 应用模式初始化 =====
@@ -1039,14 +807,12 @@ const init = async () => {
     let dashboardApiWorks = false;
     try {
       const state = bitable.dashboard.state;
-      console.log('[App] Dashboard 状态:', state);
       const isCreate = state === DashboardState.Create;
       const isConfigState = state === DashboardState.Config || isCreate;
 
       const confirmDashboardMode = () => {
         isDashboard.value = isConfirmedDashboardMode(state, dashboardApiWorks);
         modeResolved = true;
-        console.log('[App] 运行模式确认:', isDashboard.value ? '应用模式' : '底表模式');
 
         if (isDashboard.value && unsubscribe) {
           unsubscribe();
@@ -1056,7 +822,6 @@ const init = async () => {
 
       const bindDashboardConfigChange = () => {
         bitable.dashboard.onConfigChange(async (event) => {
-          console.log('[App] 配置变化事件:', event.data);
           const eventConfig = getDashboardCustomConfig(event.data);
           const nextConfig: DashboardCustomConfig = {
             pluginName: eventConfig.pluginName || dashboardCustomConfig.value.pluginName || configData.value.pluginName,
@@ -1071,12 +836,10 @@ const init = async () => {
         isConfigMode.value = true;
         confirmDashboardMode();
         bindDashboardConfigChange();
-        console.log('[App] Create 模式');
         return;
       }
 
       if (isConfigState) {
-        console.log('[App] Config 模式');
         const config = await bitable.dashboard.getConfig();
         dashboardApiWorks = true;
         isConfigMode.value = true;
@@ -1098,7 +861,6 @@ const init = async () => {
         }),
         new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), 1000)),
       ]);
-      console.log('[App] setRendered 竞速结果:', setRenderedResult);
 
       if (setRenderedResult !== 'rendered') {
         throw new Error('setRendered 未在预期时间内完成，按底表模式处理');
@@ -1122,7 +884,6 @@ const init = async () => {
       isDashboard.value = false;
       isConfigMode.value = false;
       modeResolved = true;
-      console.log('[App] 运行模式确认: 底表模式');
     }
 
     // 若 dashboard API 验证失败，继续往下走底表模式初始化流程
@@ -1132,7 +893,6 @@ const init = async () => {
   isDashboard.value = false;
   isConfigMode.value = false;
   modeResolved = true;
-  console.log('[App] 运行模式确认: 底表模式');
 
   // ===== 底表模式初始化 =====
   // 检测期间若有缓存的点击事件，直接使用；否则使用前面已经探测过的当前选中状态
