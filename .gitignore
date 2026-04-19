@@ -30,6 +30,13 @@ npm-debug.log*
 *.tmp
 *.temp
 temp_*.txt
+.tmp-*/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Generated local artifacts
+src/types/index.js
 
 # Docs (不需要发布到仓库)
 docs/

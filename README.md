@@ -1,4 +1,4 @@
-# 飞书多维表格 PDF 导出插件
+# feishu-bitable-pdf-multi-export
 
 一个用于飞书多维表格的 PDF 导出插件，支持将选中记录导出为 PDF 文件。
 
