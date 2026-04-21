@@ -39,7 +39,7 @@ export const DefaultTemplate: IPDFTemplate = {
     `).join('');
 
     return `
-      <div style="font-family: Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif; padding: 20px;">
+      <div style="font-family: Arial, 'Helvetica Neue', Helvetica, 'Microsoft YaHei', sans-serif; padding: 20px;">
         <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 20px; color: #333;">订单详情</h1>
 
         <!-- 订单头信息 -->

@@ -30,7 +30,7 @@ class PDFService {
     container.style.backgroundColor = 'white';
     container.style.padding = `${margin}mm`;
     container.style.boxSizing = 'border-box';
-    container.style.fontFamily = 'Arial, "Microsoft YaHei", "PingFang SC", sans-serif';
+    container.style.fontFamily = 'Arial, "Helvetica Neue", Helvetica, "Microsoft YaHei", sans-serif';
     document.body.appendChild(container);
 
     try {

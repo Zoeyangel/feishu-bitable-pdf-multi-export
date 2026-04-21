@@ -102,13 +102,13 @@ All fees are listed in USD and are subject to sales tax (as applicable).`;
             </tr>` : '';
 
   return `
-      <div style="font-family: Georgia, 'Times New Roman', Times, serif; padding: 40px 35px; width: 100%; max-width: 100%; margin: 0 auto; color: #000; font-size: 11pt; line-height: 1.6; box-sizing: border-box;">
+      <div style="font-family: Arial, 'Helvetica Neue', Helvetica, 'Microsoft YaHei', sans-serif; padding: 40px 35px; width: 100%; max-width: 100%; margin: 0 auto; color: #000; font-size: 11pt; line-height: 1.6; box-sizing: border-box;">
         <!-- Header: Logo + Company Info + INVOICE Title -->
         <table style="width: 100%; margin-bottom: 20px;">
           <tr>
             <td style="vertical-align: top; width: 55%; padding-right: 15px;">
-              <div style="margin-bottom: 12px;">
-                <img src="${LOGO_BASE64}" alt="Logo" style="height: 60px; width: auto; margin-bottom: 8px;" />
+              <div style="margin-bottom: 8px;">
+                <img src="${LOGO_BASE64}" alt="Logo" style="width: 180pt; height: auto; margin-bottom: 6px; display: block;" />
               </div>
               <div style="font-size: 12pt; font-weight: bold; color: #000; margin-bottom: 8px;">${companyName}</div>
               <div style="font-size: 9pt; color: #333; line-height: 1.7; white-space: pre-line;">${companyAddress}</div>
@@ -141,34 +141,21 @@ All fees are listed in USD and are subject to sales tax (as applicable).`;
           </tr>
         </table>
 
-        <!-- Divider Line -->
-        <hr style="border: none; border-top: 2px solid #000; margin: 20px 0 25px 0;" />
-
         <!-- Bill to / Ship to / Shipping method -->
         <table style="width: 100%; margin-bottom: 30px;">
           <tr>
             <td style="vertical-align: top; width: 50%; padding-right: 20px;">
-              <div style="font-weight: bold; margin-bottom: 8px; color: #000; font-size: 9pt; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Bill to:</div>
+              <div style="font-weight: bold; margin-bottom: 8px; color: #000; font-size: 9pt; text-transform: capitalize; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Bill to</div>
               <div style="font-size: 9pt; color: #333; line-height: 1.7; white-space: pre-line; padding-top: 6px;">${billTo}</div>
             </td>
             <td style="vertical-align: top; width: 50%; padding-left: 20px;">
-              <div style="font-weight: bold; margin-bottom: 8px; color: #000; font-size: 9pt; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Ship to:</div>
+              <div style="font-weight: bold; margin-bottom: 8px; color: #000; font-size: 9pt; text-transform: capitalize; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Ship to</div>
               <div style="font-size: 9pt; color: #333; line-height: 1.7; white-space: pre-line; padding-top: 6px;">${shipTo}</div>
-              ${shippingMethod ? `<div style="font-weight: bold; margin-top: 15px; margin-bottom: 6px; color: #000; font-size: 9pt; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Shipping method:</div>
+              ${shippingMethod ? `<div style="font-weight: bold; margin-top: 15px; margin-bottom: 6px; color: #000; font-size: 9pt; text-transform: capitalize; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Shipping method</div>
               <div style="font-size: 9pt; color: #333; line-height: 1.7; padding-top: 6px;">${shippingMethod}</div>` : ''}
             </td>
           </tr>
         </table>
-
-        <!-- Total Display (Prominent) -->
-        <div style="margin-bottom: 25px; text-align: right;">
-          <table style="margin-left: auto;">
-            <tr>
-              <td style="padding: 0 15px 0 0; color: #555; font-size: 9pt; vertical-align: middle;">Total:</td>
-              <td style="font-size: 18pt; font-weight: bold; color: #000;">${total}</td>
-            </tr>
-          </table>
-        </div>
 
         <!-- Products Table -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 9pt;">
@@ -186,26 +173,21 @@ All fees are listed in USD and are subject to sales tax (as applicable).`;
           </tbody>
         </table>
 
-        <!-- Divider Line -->
-        <hr style="border: none; border-top: 1px solid #ccc; margin: 20px 0;" />
-
-        <!-- Amount Summary -->
-        <div style="text-align: right; margin-bottom: 30px;">
-          <table style="margin-left: auto; font-size: 9pt;">
-            <tr>
-              <td style="padding: 6px 20px 6px 0; color: #555; text-align: right;">Subtotal:</td>
-              <td style="padding: 6px 0; text-align: right; width: 80pt; font-weight: bold;">${subtotal}</td>
-            </tr>
-            ${shippingCost ? `<tr>
-              <td style="padding: 6px 20px 6px 0; color: #555; text-align: right;">Shipping:</td>
-              <td style="padding: 6px 0; text-align: right; font-weight: bold;">${shippingCost}</td>
-            </tr>` : ''}
-            <tr style="font-weight: bold; font-size: 10pt;">
-              <td style="padding: 10px 20px 10px 0; color: #000; border-top: 2px solid #000; text-align: right;">Total:</td>
-              <td style="padding: 10px 0; text-align: right; border-top: 2px solid #000;">${total}</td>
-            </tr>
-          </table>
-        </div>
+        <!-- Amount Summary Table -->
+        <table style="width: 50%; margin-left: auto; margin-bottom: 30px; border-collapse: collapse; font-size: 10pt; padding-left: 20px;">
+          <tr>
+            <td style="padding: 10px 15px 10px 20px; color: #555; text-align: left; width: 50%;">Subtotal</td>
+            <td style="padding: 10px 0; text-align: right; width: 50%;">${subtotal}</td>
+          </tr>
+          ${shippingCost ? `<tr>
+            <td style="padding: 10px 15px 10px 20px; color: #555; text-align: left;">Shipping</td>
+            <td style="padding: 10px 0; text-align: right;">${shippingCost}</td>
+          </tr>` : ''}
+          <tr style="border-top: 2px solid #000;">
+            <td style="padding: 12px 15px 12px 20px; color: #000; text-align: left; font-weight: bold;">Total</td>
+            <td style="padding: 12px 0; text-align: right; font-weight: bold;">${total}</td>
+          </tr>
+        </table>
 
         <!-- Comments -->
         <div style="margin-top: auto; padding-top: 25px; border-top: 2px solid #000;">
