@@ -129,6 +129,16 @@
       </template>
     </div>
   </div>
+
+  <!-- 图片预览弹窗 -->
+  <ImagePreview
+    :visible="imagePreviewVisible"
+    :imageUrl="imagePreviewUrl"
+    :loading="imagePreviewLoading"
+    :error="imagePreviewError"
+    @close="onImagePreviewClose"
+    @retry="onImagePreviewRetry"
+  />
 </template>
 
 <script setup lang="ts">
@@ -137,6 +147,7 @@ import { bitable, DashboardState } from '@lark-base-open/js-sdk';
 import FieldSelector from './components/FieldSelector.vue';
 import DataPreview from './components/DataPreview.vue';
 import ExportPanel from './components/ExportPanel.vue';
+import ImagePreview from './components/ImagePreview.vue';
 import { bitableService } from './services/bitableService';
 import { pdfService } from './services/pdfService';
 import { templates, getTemplateById } from './templates';
@@ -175,6 +186,12 @@ const templateError = ref<string | null>(null);
 const editedValues = ref<Record<string, string>>({});
 const currentInvoiceNumber = ref<string>('');
 const invoiceTableContext = ref<InvoiceTableContext | null>(null);
+
+// 图片预览状态
+const imagePreviewVisible = ref(false);
+const imagePreviewUrl = ref('');
+const imagePreviewLoading = ref(false);
+const imagePreviewError = ref<string | null>(null);
 
 interface DashboardCustomConfig {
   pluginName?: string;
@@ -624,6 +641,12 @@ const onPreview = async () => {
   const template = getTemplateById(selectedTemplate.value);
   if (!template || !aggregatedOrder.value) return;
 
+  // 打开预览弹窗并显示加载状态
+  imagePreviewVisible.value = true;
+  imagePreviewLoading.value = true;
+  imagePreviewError.value = null;
+  imagePreviewUrl.value = '';
+
   try {
     let invoiceNumber: string | undefined;
     if (template.id === 'invoice') {
@@ -632,10 +655,32 @@ const onPreview = async () => {
       }
       invoiceNumber = await getOrGenerateInvoiceNumber(invoiceTableContext.value);
     }
-    await pdfService.preview(template, aggregatedOrder.value, editedValues.value, invoiceNumber);
+
+    // 生成预览图片
+    const imageUrl = await pdfService.generatePreviewImage(
+      template,
+      aggregatedOrder.value,
+      editedValues.value,
+      invoiceNumber
+    );
+
+    imagePreviewUrl.value = imageUrl;
+    imagePreviewLoading.value = false;
   } catch (e) {
-    error.value = 'PDF预览失败，请重试';
+    console.error('[App] PDF预览失败:', e);
+    imagePreviewError.value = 'PDF预览失败，请重试';
+    imagePreviewLoading.value = false;
   }
+};
+
+const onImagePreviewClose = () => {
+  imagePreviewVisible.value = false;
+  imagePreviewUrl.value = '';
+  imagePreviewError.value = null;
+};
+
+const onImagePreviewRetry = () => {
+  onPreview();
 };
 
 const onDownload = async () => {

@@ -129,6 +129,54 @@ class PDFService {
   }
 
   /**
+   * 生成PDF预览图片（返回图片DataURL，用于防下载预览）
+   */
+  async generatePreviewImage(template: IPDFTemplate, data: AggregatedOrder, editedValues?: Record<string, string>, invoiceNumber?: string): Promise<string> {
+    // A4尺寸 (mm)
+    const a4Width = 210;
+    const margin = 10; // 页边距
+
+    // 创建临时容器
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.top = '-9999px';
+    container.style.width = `${a4Width - margin * 2}mm`;
+    container.style.backgroundColor = 'white';
+    container.style.padding = `${margin}mm`;
+    container.style.boxSizing = 'border-box';
+    container.style.fontFamily = 'Arial, "Helvetica Neue", Helvetica, "Microsoft YaHei", sans-serif';
+    document.body.appendChild(container);
+
+    try {
+      // 生成HTML内容
+      let htmlContent: string;
+      if (template.id === 'invoice') {
+        htmlContent = generateInvoiceHTML(data, editedValues, invoiceNumber);
+      } else {
+        htmlContent = template.generate(data, editedValues) as string;
+      }
+      container.innerHTML = htmlContent;
+
+      // 等待字体加载
+      await document.fonts.ready;
+
+      // 使用html2canvas截图
+      const canvas = await html2canvas(container, {
+        scale: 2,  // 保持高质量
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+
+      // 返回图片DataURL
+      return canvas.toDataURL('image/png');
+    } finally {
+      document.body.removeChild(container);
+    }
+  }
+
+  /**
    * 新标签页预览PDF
    */
   async preview(template: IPDFTemplate, data: AggregatedOrder, editedValues?: Record<string, string>, invoiceNumber?: string): Promise<void> {
