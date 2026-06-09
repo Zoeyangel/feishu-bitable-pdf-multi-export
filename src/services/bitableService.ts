@@ -333,7 +333,7 @@ class BitableService {
       if (hasQty || hasUnitPrice) {
         const qtyNum = this.parseNumeric(item.qty);
         const unitPriceNum = this.parseNumeric(item.unitPrice);
-        item.amount = (qtyNum * unitPriceNum).toFixed(2);
+        item.amount = '$' + (qtyNum * unitPriceNum).toFixed(2);
       }
 
       if (item.product || item.qty || item.unitPrice) {
@@ -379,9 +379,9 @@ class BitableService {
       serialNo: header.serialNo,
       header,
       items,
-      subtotal: subtotal.toFixed(2),
-      shippingCost,
-      total: finalTotal,
+      subtotal: '$' + subtotal.toFixed(2),
+      shippingCost: shippingCost.startsWith('$') ? shippingCost : shippingCost ? '$' + this.parseNumeric(shippingCost).toFixed(2) : '',
+      total: '$' + finalTotal,
       sourceRecordIds: records.map(r => r.recordId),
       conflicts: conflicts.length > 0 ? conflicts : undefined,
     };
