@@ -274,6 +274,16 @@ class BitableService {
   }
 
   /**
+   * 解析数值字符串，移除货币符号和千分位逗号
+   */
+  private parseNumeric(value: string): number {
+    if (!value) return 0;
+    const cleaned = value.replace(/[$,]/g, '').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  }
+
+  /**
    * 【核心】聚合多行记录为一个订单对象
    */
   aggregateOrder(records: RecordData[]): AggregatedOrder {
@@ -305,7 +315,7 @@ class BitableService {
           if (fieldName === 'products') item.product = value;
           else if (fieldName === 'qty') item.qty = value;
           else if (fieldName === 'unitprice') item.unitPrice = value;
-          else if (fieldName === 'amount') item.amount = value;
+          // Amount 不直接从表格读取，由 qty × unitPrice 计算
           else if (fieldName.includes('description') || fieldName.includes('颜色')) item.description = value;
         } else {
           if (!headerFields[field.fieldName]) {
@@ -317,7 +327,16 @@ class BitableService {
         }
       }
 
-      if (item.product || item.amount) {
+      // 根据 QTY 和 UNIT PRICE 计算 Amount
+      const hasQty = item.qty.trim() !== '';
+      const hasUnitPrice = item.unitPrice.trim() !== '';
+      if (hasQty || hasUnitPrice) {
+        const qtyNum = this.parseNumeric(item.qty);
+        const unitPriceNum = this.parseNumeric(item.unitPrice);
+        item.amount = (qtyNum * unitPriceNum).toFixed(2);
+      }
+
+      if (item.product || item.qty || item.unitPrice) {
         items.push(item);
       }
     }
@@ -337,28 +356,24 @@ class BitableService {
       }
     }
 
+    // 基于计算后的 item.amount 求和得到 subtotal（不再信任表格中的公式字段）
     let subtotal = 0;
     for (const item of items) {
-      subtotal += parseFloat(item.amount) || 0;
+      subtotal += this.parseNumeric(item.amount);
     }
 
+    // 读取 shippingCost，同样清理货币符号
     let shippingCost = '';
-    let total = '';
     for (const record of records) {
       for (const field of record.fields) {
         const fn = field.fieldName.toLowerCase().replace(/\s+/g, '');
-        if (fn === 'subtotal' && field.value) subtotal = parseFloat(field.value) || subtotal;
         if (fn === 'shippingcost' || fn === 'shipping') shippingCost = field.value;
-        if (fn === 'total' && field.value) total = field.value;
       }
     }
 
-    // 优先使用表格中的 total 字段，否则计算 subtotal + shippingCost
-    let finalTotal = total;
-    if (!finalTotal) {
-      const shippingNum = parseFloat(shippingCost) || 0;
-      finalTotal = (subtotal + shippingNum).toFixed(2);
-    }
+    // Total = subtotal + shippingCost
+    const shippingNum = this.parseNumeric(shippingCost);
+    const finalTotal = (subtotal + shippingNum).toFixed(2);
 
     return {
       serialNo: header.serialNo,
