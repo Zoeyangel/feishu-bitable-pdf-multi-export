@@ -27,6 +27,7 @@ function generateInvoiceHTML(
       if (fn === 'firm' && editedValues['firm'] !== undefined) return editedValues['firm'];
       if (fn === 'billto' && editedValues['billTo'] !== undefined) return editedValues['billTo'];
       if (fn === 'shipto' && editedValues['shipTo'] !== undefined) return editedValues['shipTo'];
+      if (fn === 'inhanddate' && editedValues['inHandDate'] !== undefined) return editedValues['inHandDate'];
       // 检查原始字段名
       if (editedValues[fieldName] !== undefined) return editedValues[fieldName];
     }
@@ -206,7 +207,7 @@ export const InvoiceTemplate: IPDFTemplate = {
   fields: {
     required: ['PO number', 'Bill to', 'Ship to', 'PRODUCTS', 'QTY', 'UNIT PRICE', 'Amount', 'Subtotal', 'Total'],
     optional: ['In-hand Date', 'Firm', 'Shipping method', 'Description(颜色/印刷等)', 'Setup QTY', 'Setup Charge', 'AMOUNT 2', 'Shipping Cost'],
-    editable: ['PO number', 'Bill to', 'Ship to', 'Shipping method', 'Firm'],
+    editable: ['PO number', 'Bill to', 'Ship to', 'Shipping method', 'Firm', 'In-hand Date'],
     amountFields: ['Subtotal', 'Total', 'Amount', 'AMOUNT 2', 'Shipping Cost', 'UNIT PRICE', 'Setup Charge'],
   },
   generate(data: AggregatedOrder, editedValues?: Record<string, string>, invoiceNumber?: string): string {

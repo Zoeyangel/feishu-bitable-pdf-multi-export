@@ -183,6 +183,8 @@ const editableFieldList = computed(() => {
       result.push({ key: 'poNumber', label: 'PO number' });
     } else if (key === 'shippingmethod') {
       result.push({ key: 'shippingMethod', label: 'Shipping method' });
+    } else if (key === 'inhanddate') {
+      result.push({ key: 'inHandDate', label: 'In-hand Date' });
     } else {
       result.push({ key, label: name });
     }

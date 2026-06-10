@@ -568,6 +568,7 @@ const loadOrderBySerialNo = async (
   if (header['PO number']) editedValues.value['poNumber'] = header['PO number'];
   if (header['Shipping method']) editedValues.value['shippingMethod'] = header['Shipping method'];
   if (header['Firm']) editedValues.value['firm'] = header['Firm'];
+  if (header['In-hand Date']) editedValues.value['inHandDate'] = header['In-hand Date'];
 
   // 检查冲突
   if (aggregatedOrder.value.conflicts && aggregatedOrder.value.conflicts.length > 0) {
