@@ -174,7 +174,7 @@ const editableFieldList = computed(() => {
   const result: { key: string; label: string }[] = [];
 
   for (const name of editableFieldNames) {
-    const key = name.toLowerCase().replace(/\s+/g, '');
+    const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (key === 'billto') {
       result.push({ key: 'billTo', label: 'Bill to' });
     } else if (key === 'shipto') {
