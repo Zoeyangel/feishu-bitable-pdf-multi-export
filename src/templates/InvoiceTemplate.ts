@@ -21,7 +21,7 @@ function generateInvoiceHTML(
     // 首先检查编辑值中的标准key
     if (editedValues) {
       // 检查标准化的key
-      const fn = fieldName.toLowerCase().replace(/\s+/g, '');
+      const fn = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (fn === 'ponumber' && editedValues['poNumber'] !== undefined) return editedValues['poNumber'];
       if (fn === 'shippingmethod' && editedValues['shippingMethod'] !== undefined) return editedValues['shippingMethod'];
       if (fn === 'firm' && editedValues['firm'] !== undefined) return editedValues['firm'];
@@ -32,9 +32,9 @@ function generateInvoiceHTML(
       if (editedValues[fieldName] !== undefined) return editedValues[fieldName];
     }
     const header = data.header as Record<string, string>;
-    const fn = fieldName.toLowerCase().replace(/\s+/g, '');
+    const fn = fieldName.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const [k, v] of Object.entries(header)) {
-      if (k.toLowerCase().replace(/\s+/g, '') === fn) return v;
+      if (k.toLowerCase().replace(/[^a-z0-9]/g, '') === fn) return v;
     }
     if (fn === 'subtotal') return data.subtotal || '';
     if (fn === 'shippingcost' || fn === 'shipping') return data.shippingCost || '';
